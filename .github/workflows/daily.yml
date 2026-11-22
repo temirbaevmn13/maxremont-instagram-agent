@@ -1,0 +1,60 @@
+name: MAX REMONT — Instagram без рекламы
+
+on:
+  schedule:
+    - cron: '0 12 * * *'
+      timezone: 'Asia/Bishkek'
+    - cron: '0 16 * * 2,4,6'
+      timezone: 'Asia/Bishkek'
+    - cron: '0 19 * * *'
+      timezone: 'Asia/Bishkek'
+  workflow_dispatch:
+    inputs:
+      content_kind:
+        description: 'Что создать: all (всё), reel, story или post'
+        required: true
+        default: 'all'
+        type: choice
+        options: [all, reel, story, post]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: maxremont-instagram-daily
+  cancel-in-progress: false
+
+jobs:
+  create-content:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: gemini-2.5-flash-lite
+      CLOUDINARY_URL: ${{ secrets.CLOUDINARY_URL }}
+      META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+      IG_USER_ID: ${{ secrets.IG_USER_ID }}
+      GH_STATE_TOKEN: ${{ github.token }}
+      PUBLISH_ENABLED: ${{ vars.PUBLISH_ENABLED || 'false' }}
+      META_GRAPH_VERSION: v26.0
+      CONTENT_KIND: ${{ github.event_name == 'workflow_dispatch' && inputs.content_kind || github.event.schedule == '0 12 * * *' && 'story' || github.event.schedule == '0 16 * * 2,4,6' && 'post' || 'reel' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install open-source video tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          pip install -r requirements.txt
+      - name: Create content (publishing OFF by default)
+        run: python run.py
+      - name: Save drafts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maxremont-content-${{ github.run_id }}
+          path: output/
+          retention-days: 7
+          if-no-files-found: warn
